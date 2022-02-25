@@ -1,0 +1,119 @@
+---
+title: "Your Document Title"
+author: "Document Author"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+editor_options: 
+  chunk_output_type: console
+---
+
+we're looking at a LARGE dataset of bird data. Looking at individual traits, and neighbours, and the relative contribution of each to fitness
+
+```{r}
+library(tidyverse)
+
+# one farm simulation
+
+# fitness is the number of hatchlins which fly away.
+n <- 10
+hatch_avg <- tibble(id  = 1:n,
+       mass = rnorm(n, mean = 0, sd = 2),
+       hatchling_mean = exp(.9 + .2 * mass))
+hatch_avg %>% 
+  ggplot(aes(x = mass, y = hatchling_mean)) + geom_point()
+
+```
+
+simulate observations
+
+```{r}
+hatch_obs <- hatch_avg %>% 
+  mutate(obs_hatchling = rpois(n, hatchling_mean)) 
+
+hatch_obs %>% 
+  ggplot(aes(x = mass, y = obs_hatchling)) + geom_point()
+```
+
+
+```{r}
+m <- glm(obs_hatchling ~ mass, data = hatch_obs, family = poisson())
+summary(m)
+```
+
+# neighbour
+
+doing this using [rowwise operations!](https://dplyr.tidyverse.org/articles/rowwise.html)
+
+```{r}
+list_of_voisin <- hatch_obs %>% 
+  rowwise %>% 
+  mutate(voisin_donnee = list(hatch_obs[-id, ]))
+
+list_of_voisin$voisin_donnee[[3]]
+
+```
+
+sumamrize them
+
+```{r}
+list_of_voisin %>% 
+  mutate(voisin_mass = mean(voisin_donnee$mass))
+```
+
+
+
+```{r}
+list_of_voisin %>% 
+  mutate(voisin_mass = mean(voisin_donnee$mass)) %>% 
+  ggplot(aes(x = mass, y = voisin_mass)) + geom_point()
+```
+
+
+## EDA
+
+ggplot2
+
+visdat / naniar
+
+dplyr::count
+
+
+
+
+```{r}
+library(palmerpenguins)
+penguins
+
+count(penguins, species, island)
+```
+
+
+```{r}
+# relation between the bill dimensions
+
+penguins %>% 
+  ggplot(aes(x = bill_length_mm, y = bill_depth_mm)) + 
+  geom_point()
+  
+```
+
+```{r}
+penguins %>% 
+  ggplot(aes(x = bill_length_mm, y = bill_depth_mm, colour = sex)) + 
+  geom_point() + 
+  stat_smooth(method = "lm")
+
+```
+
+```{r}
+penguins %>% 
+  ggplot(aes(x = bill_length_mm,group = species, y = bill_depth_mm, colour = sex)) + 
+  geom_point() + 
+  stat_smooth(method = "lm")
+```
+
+
+
