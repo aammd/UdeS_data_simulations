@@ -1,0 +1,196 @@
+---
+title: "Simulating tadpoles"
+author: "Andrew and Simon"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+editor_options: 
+  chunk_output_type: console
+---
+
+## genetic information
+
+cluster -- is one egg mass with multiple fertilizing males
+
+family -- is tadpoles fertilizes by the same mother-father pair
+
+genetics applies only to the final size of specific indivituals
+
+
+* we're removing the LOW herbicide treatment because 
+
+* trying to catch before legs come out BUT sometimes
+
+svl is not always correlated to mass -- because over the time int he final stage of life, mass decreases per time 
+
+
+## simulation of Tadpole final size
+
+start with the mass of 20 tadpoles
+```{r}
+# twenty tadpoles
+tadpole_mass <- rnorm(n = 20, mean = .8, sd = .2)
+
+```
+
+might not actualy be normal
+
+```{r}
+hist(tadpole_mass)
+```
+
+
+now add the effect of drying
+
+```{r}
+avg_healthy_good_water <- .8
+effect_dry <- c("null" = 0, "medium" = -.03, "rapid" = -0.1)
+
+avg_healthy_good_water + effect_dry["medium"]
+
+library(tidyverse)
+
+fake_data <- tibble(dry_treatment = rep(names(effect_dry), each = 20),
+                    avg_size = avg_healthy_good_water + effect_dry[dry_treatment],
+                    obs_size = rnorm(length(dry_treatment), mean = avg_size, sd = .02)) |> 
+  mutate(dry_treatment = factor(dry_treatment, levels = c("null", "medium", "rapid")))
+
+ggplot(fake_data, aes(x = dry_treatment, y = avg_size)) + geom_point()
+
+fake_data |> 
+  ggplot(aes(x = dry_treatment, y = obs_size)) + 
+  geom_boxplot()+
+  geom_point()
+
+
+```
+
+Now we try to recover those values! 
+
+```{r}
+summary(lm(obs_size ~ dry_treatment, data = fake_data))
+```
+
+### adding poison
+
+```{r}
+
+```
+
+
+### adding random effects
+
+```{r}
+# how many cattle tanks?
+
+n_cattle_tanks <- 12
+sd_cattle_tanks <- .03
+
+n_bins <- 24 #(two bins in a tank)
+sd_bins <- .1
+
+avg_healthy_good_water <- .8
+effect_dry <- c("null" = 0, "medium" = -.03, "rapid" = -0.1)
+
+effect_poison <- c("null" = 0, "faible" = -.01, "moyen" = -.1,"haut" = -.3)
+
+tank_effects <- rnorm(n_cattle_tanks, mean = 0, sd = sd_cattle_tanks)
+
+bin_effects <- rnorm(n_bins, mean = 0, sd = sd_bins)
+
+# sd(bin_effects); sd_bins
+# sd(tank_effects); sd_cattle_tanks
+
+treatment_combos <- expand.grid(
+  dry_trt = names(effect_dry),
+  poison_trt = names(effect_poison)
+)
+
+# repeat every row twice! 
+treatments_for_bins <- treatment_combos[rep(1:12, each = 2),]
+
+fake_data_avgs <- tibble(
+ tank_id = rep(1:n_cattle_tanks, each = 2) ,
+ bin_id  = 1:n_bins,
+ tank_effect = tank_effects[tank_id],
+ bin_effect = bin_effects[bin_id],
+ not_controlled_effect = tank_effect + bin_effect
+) |> 
+  cbind(treatments_for_bins) |> 
+  # add the effects of treats 
+  mutate(avg_effect =  avg_healthy_good_water + effect_dry[dry_trt] + effect_poison[poison_trt] + not_controlled_effect)
+
+knitr::kable(fake_data_avgs)
+```
+
+
+make observations of the tadpoles
+
+(begin: tidyverse magick! )
+
+```{r}
+n_metamorphs <- 20
+sd_mass <- .1
+
+fake_full_data <- fake_data_avgs |> 
+  rowwise() |> 
+  mutate(obs_mass = list(rnorm(n = n_metamorphs, mean = avg_effect, sd = sd_mass))) |> 
+  unnest(obs_mass)
+```
+
+Try to model it! 
+
+```{r}
+library(lme4)
+
+fm <- lmer(obs_mass ~ dry_trt + poison_trt + (1 | tank_id) + (1 | bin_id), data = fake_full_data)
+summary(fm)
+```
+
+```{r}
+fixef(fm)
+effect_dry
+effect_poison
+avg_healthy_good_water
+```
+
+```{r}
+ranef(fm)
+bin_effects
+```
+
+```{r}
+summary(fm)$varcor
+
+sd_bins
+sd_cattle_tanks
+```
+
+
+## plot the fake data
+
+```{r}
+fake_full_data |> 
+  ggplot(aes(x = poison_trt, y = obs_mass)) + 
+  geom_violin() + 
+  facet_wrap(~dry_trt)
+```
+
+```{r}
+
+fake_full_data |> 
+  ggplot(aes(x = poison_trt, y = obs_mass)) + 
+  geom_violin() + 
+  facet_grid(tank_id~dry_trt)
+```
+
+Why the singularity in Simon's model?
+
+```{r}
+fake_full_data |> 
+  count(tank_id, dry_trt)
+```
+
+This is just as it should be! one dry trt is applied to each tank
