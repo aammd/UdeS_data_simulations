@@ -71,6 +71,16 @@ list_of_voisin %>%
   ggplot(aes(x = mass, y = voisin_mass)) + geom_point()
 ```
 
+What if we consider z scores
+
+```{r}
+list_of_voisin |> 
+  mutate(voisin_mean = mean(voisin_donnee$mass),
+         voisin_stdv = sd(voisin_donnee$mass),
+         mass_z = (mass - voisin_mean)/voisin_stdv) |> 
+  ggplot(aes(x = mass, y = mass_z)) + geom_point()
+```
+
 
 ## EDA
 
