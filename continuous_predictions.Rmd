@@ -1,0 +1,286 @@
+---
+title: "predictions for continuous models"
+author: "Andrew"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+editor_options: 
+  chunk_output_type: console
+---
+
+## plotting models with two predictors
+
+```{r, message=FALSE, warning=FALSE}
+library(palmerpenguins)
+library(tidyverse)
+library(lme4)
+```
+
+plot of the data
+
+```{r}
+penguins |> 
+  ggplot(aes(y = body_mass_g, x = bill_depth_mm, size = bill_length_mm, colour = species)) + 
+  geom_point(alpha = .6) + 
+  scale_colour_brewer(type = "qual")
+```
+
+
+predict body mass from the bill sizes
+
+```{r}
+mass_model <- lmer(body_mass_g ~ bill_depth_mm + bill_length_mm + (1|species), data = penguins)
+summary(mass_model)
+```
+
+Center the predictors
+
+```{r}
+penguin_centre <- penguins |> 
+  mutate(bill_d_c = bill_depth_mm - mean(bill_depth_mm, na.rm = TRUE),
+         bill_l_c = bill_length_mm - mean(bill_length_mm, na.rm = TRUE))
+
+```
+
+
+```{r}
+mass_model_c <- lmer(body_mass_g ~ bill_d_c + bill_l_c + (1|species), data = penguin_centre)
+```
+
+
+predictions and put on a figure
+
+```{r}
+peng_plot <- penguin_centre |> 
+  ggplot(aes(y = body_mass_g, x = bill_d_c, size = bill_l_c, colour = species)) + 
+  geom_point(alpha = .6) + 
+  scale_colour_brewer(type = "qual")
+
+peng_plot
+```
+
+```{r}
+library(modelr)
+
+fake_penguins <- data_grid(penguin_centre,
+          bill_d_c = seq_range(bill_d_c,n = 30),
+          bill_l_c = seq_range(bill_l_c,n = 5),
+          species)
+
+fake_penguins$pred <- predict(mass_model_c, newdata = fake_penguins, type = "response")
+```
+
+add these to our plot
+
+
+```{r}
+fake_penguins |> 
+  ggplot(aes(x = bill_d_c, y = pred, colour = species)) + geom_line() + facet_wrap(~bill_l_c) 
+```
+
+we get a jagged line between if we omit the other continuous variable
+
+```{r}
+fake_penguins |> 
+  ggplot(aes(x = bill_d_c, y = pred, colour = species)) + geom_point() 
+```
+
+We can think of a model with two continuous predictors as representing a smooth 2 dimensional surface:
+
+```{r}
+more_fake_penguins <-  data_grid(penguin_centre,
+          bill_d_c = seq_range(bill_d_c,n = 30),
+          bill_l_c = seq_range(bill_l_c,n = 30),
+          species)
+
+
+more_fake_penguins$pred <- predict(mass_model_c, newdata = more_fake_penguins, type = "response")
+
+
+more_fake_penguins |> 
+  ggplot(aes(x = bill_d_c, y = bill_l_c, fill = pred)) + 
+  geom_raster()
+```
+
+but this is too hard to visualize! 
+
+## Predicting for one at a time
+
+Here we make two plots: one for bill depth, fixing length at the average. 
+Then a second for bill length, fixing depth at the average
+
+This is made easy by centering -- we know the average is now 0
+
+```{r}
+
+fake_penguins_0_length <-  
+  data_grid(penguin_centre,
+            bill_d_c = seq_range(bill_d_c,n = 30),
+            bill_l_c = 0,
+            species)
+
+
+fake_penguins_0_length$pred <- predict(mass_model_c,
+                                  newdata = fake_penguins_0_length, type = "response")
+
+fake_penguins_0_length |> 
+  ggplot(aes(x = bill_d_c, y = pred, colour = species)) + 
+  geom_line(size = 2) +
+  scale_colour_brewer(type = "qual") + coord_cartesian(ylim = c(2000, 6500)) 
+```
+
+```{r}
+fake_penguins_0_depth <-  
+  data_grid(penguin_centre,
+            bill_d_c = 0,
+            bill_l_c = seq_range(bill_l_c,n = 30),
+            species)
+
+
+fake_penguins_0_depth$pred <- predict(mass_model_c,
+                                  newdata = fake_penguins_0_depth, type = "response")
+
+fake_penguins_0_depth |> 
+  ggplot(aes(x = bill_l_c, y = pred, colour = species)) + 
+  geom_line(size = 2) +
+  scale_colour_brewer(type = "qual")+ coord_cartesian(ylim = c(2000, 6500)) 
+```
+
+
+
+An alternative is to select only a few values for one predictor. This simplifies the figure and lets us understand the model more completely.
+
+```{r}
+# using cut to make a tryptich
+
+range(penguin_centre$bill_l_c, na.rm = TRUE)
+
+
+fake_penguins_three_lengths <-  
+  data_grid(penguin_centre,
+            bill_d_c = seq_range(bill_d_c,n = 30),
+            bill_l_c = c(-10, 0, 10),
+            species)
+
+
+fake_penguins_three_lengths$pred <- predict(mass_model_c,
+                                  newdata = fake_penguins_three_lengths, type = "response")
+
+fake_penguins_three_lengths |> 
+  ggplot(aes(x = bill_d_c, y = pred, colour = species)) + 
+  geom_line(size = 2) +
+  facet_wrap(~bill_l_c) + 
+  scale_colour_brewer(type = "qual") 
+```
+
+
+
+### Using group averages to make predictions
+
+The above figure is great, but has one deficiency: it is hard to place the raw data on these figures. 
+We can solve this by deriving our three selected values of `bill_l_c` from the data.
+To do this, we use `cut()` to divide the column `bill_l_c` into three equal categories. 
+In each of these three categories, we calculate the average to use in predictions.
+We can then cut the real data in the same three categories. 
+This lets us plot the data together with the model. 
+
+
+```{r}
+# using cut to make a tryptich
+cut_raw_peng <- penguin_centre |> 
+  filter(!is.na(bill_depth_mm)) |> 
+  mutate(cut_bill_len = cut(bill_l_c, breaks = 3)) |> 
+  group_by(cut_bill_len) |> 
+  mutate(mean_bill_len = mean(bill_l_c, na.rm = TRUE)) |> 
+  ungroup()
+
+
+fake_cut_penguins <-  
+  data_grid(cut_raw_peng,
+            bill_d_c = seq_range(bill_d_c,n = 30),
+            nesting(bill_l_c = mean_bill_len,
+                    cut_bill_len),
+            species)
+
+
+fake_cut_penguins$pred <- predict(mass_model_c, newdata = fake_cut_penguins, type = "response")
+
+fake_cut_penguins |> 
+  count(bill_l_c, cut_bill_len)
+
+
+fake_cut_penguins |> 
+  ggplot(aes(x = bill_d_c, y = pred, colour = species)) + 
+  geom_line(size = 2) +
+  facet_wrap(~cut_bill_len) + 
+  scale_colour_brewer(type = "qual") + 
+  geom_point(aes(x = bill_d_c, y = body_mass_g), data = cut_raw_peng, alpha = .6)
+  
+```
+
+### interactions and better models
+
+```{r}
+mass_model_interact <- lmer(body_mass_g ~ bill_d_c*bill_l_c + (1 + bill_d_c*bill_l_c|species), data = penguin_centre)
+summary(mass_model_interact)
+
+# using cut to make a tryptich
+cut_raw_peng <- penguin_centre |> 
+  filter(!is.na(bill_depth_mm)) |> 
+  mutate(cut_bill_len = cut(bill_l_c, breaks = 3)) |> 
+  group_by(cut_bill_len) |> 
+  mutate(mean_bill_len = median(bill_l_c, na.rm = TRUE)) |> 
+  ungroup()
+
+
+fake_cut_penguins <-  
+  data_grid(cut_raw_peng,
+            bill_d_c = seq_range(bill_d_c,n = 30),
+            nesting(bill_l_c = mean_bill_len,
+                    cut_bill_len),
+            species)
+
+
+fake_cut_penguins$pred <- predict(mass_model_interact, newdata = fake_cut_penguins, type = "response")
+
+fake_cut_penguins |> 
+  count(bill_l_c, cut_bill_len)
+
+
+fake_cut_penguins |> 
+  ggplot(aes(x = bill_d_c, y = pred, colour = species)) + 
+  geom_line(size = 2) +
+  facet_wrap(~cut_bill_len) + 
+  scale_colour_brewer(type = "qual") + 
+  geom_point(aes(x = bill_d_c, y = body_mass_g), data = cut_raw_peng, alpha = .6)
+```
+
+group mean centered
+
+```{r}
+penguins_gc <- penguins |> 
+  group_by(species) |> 
+  mutate(bill_len_gm = mean(bill_length_mm, na.rm = TRUE),
+         bill_len_gc = bill_length_mm - bill_len_gm) |> 
+  ungroup()
+
+bill_model <- lmer(body_mass_g ~ bill_len_gm + bill_len_gc + (1 + bill_len_gc | species), data = penguins_gc)
+
+fake_gc_peng <- penguins_gc |> 
+  nest_by(species, bill_len_gm) |> 
+  mutate(bill_len_gc = list(seq_range(data$bill_len_gc, n = 12))) |> 
+  select(-data) |> 
+  unnest(bill_len_gc) |> 
+  ungroup()
+
+fake_gc_peng$pred <- predict(bill_model, newdata = fake_gc_peng, type = "response")
+
+fake_gc_peng |> 
+  ggplot(aes(x = bill_len_gm + bill_len_gc, y = pred, colour = species)) + 
+  geom_line(size = 2) + 
+  scale_colour_brewer(type = "qual") + 
+  geom_point(aes(y = body_mass_g), data = penguins_gc)
+```
+
