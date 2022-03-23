@@ -239,20 +239,22 @@ nonlin_form_id <- bf(FID ~ exp(logM) * (1 - p*num_obs/(exp(logd) + num_obs)),
    family = Gamma(link = "identity")
 )
 
+# note that the first observation is 0 (could have also done 0:14)
 fake_tamia_id <- expand.grid(tamia_id = paste0("t", 1:40),
-                             num_obs = 1:15, 
+                             num_obs = (1:15 - 1), 
                              FID = 200)
 
 get_prior(nonlin_form_id, data = fake_tamia_id)
 
-nonlin_prior_lnks <- c(prior(normal(6,.5), class = "b", nlpar = "logM"),
+nonlin_prior_lnks <- c(
+  prior(normal(6,.5), class = "b", nlpar = "logM"),
   prior(beta(4,4), class = "b", nlpar = "p", lb = 0, ub = 1),
   prior(normal(1.5, .5), class = "b", nlpar = "logd"),
   prior(gamma(6.25, .25), class = "shape"))
 
 
-nonlin_gamma_model_lnks <- brm(nonlin_formula_lnks,
-                    data = fake_tamia,
+nonlin_gamma_model_lnks <- brm(nonlin_form_id,
+                    data = fake_tamia_id,
                     prior = nonlin_prior_lnks,
                     backend = "cmdstanr",
                     file = "prior_nonlin_model", 
@@ -263,6 +265,83 @@ nonlin_gamma_model_lnks <- brm(nonlin_formula_lnks,
 summary(nonlin_gamma_model_lnks)
 ```
 
+```{r}
+fake_tamia_id_predictions <- fake_tamia_id |> 
+  add_predicted_draws(nonlin_gamma_model_lnks, ndraws = 5)
+
+fake_tamia_id_predictions |> 
+  ggplot(aes(x = num_obs, y = .prediction, colour = tamia_id)) + 
+  geom_point() + 
+  facet_wrap(~.draw) + 
+  guides(colour = "none")
+
+
+```
+
+```{r}
+fake_tamia_id_epred <- fake_tamia_id |> 
+  add_epred_draws(nonlin_gamma_model_lnks, ndraws =12)
+
+fake_tamia_id_epred |> 
+  ggplot(aes(x = num_obs, y = .epred, colour = tamia_id)) + 
+  geom_line() + 
+  facet_wrap(~.draw) + 
+  guides(colour = "none")
+```
+
+## full complex model
+
+```{r}
+
+nonlin_form_id_full <- bf(FID ~ exp(logM) * (1 - inv_logit(p)*num_obs/(exp(logd) + num_obs)),
+   logM ~ 1 + (1 |t| tamia_id),
+   p    ~ 1 + (1 |t| tamia_id),
+   logd ~ 1 + (1 |t| tamia_id),
+   nl = TRUE,
+   family = Gamma(link = "identity")
+)
+
+# note that the first observation is 0 (could have also done 0:14)
+fake_tamia_id <- expand.grid(tamia_id = paste0("t", 1:40),
+                             num_obs = (1:15 - 1), 
+                             FID = 200)
+
+get_prior(nonlin_form_id_full, data = fake_tamia_id)
+
+nonlin_prior_full <- c(
+  prior(lkj(2), class = "cor"),
+  prior(exponential(1), class = "sd", nlpar = "logd"),
+  prior(exponential(4), class = "sd", nlpar = "logM"),
+  prior(exponential(2), class = "sd", nlpar = "p"),
+  prior(normal(1.5, .5), class = "b", nlpar = "logd"),
+  prior(normal(6,.5), class = "b", nlpar = "logM"),
+  prior(normal(-1, .2), class = "b", nlpar = "p"),
+  prior(gamma(6.25, .25), class = "shape")
+  )
+
+
+nonlin_gamma_model_lnks <- brm(nonlin_form_id_full,
+                    data = fake_tamia_id,
+                    prior = nonlin_prior_full,
+                    backend = "cmdstanr",
+                    file = "prior_nonlin_model_full", 
+                    sample_prior = "only",
+                    file_refit = "on_change")
+
+# just the prior
+summary(nonlin_gamma_model_lnks)
+```
+
+```{r}
+fake_tamia_id_epred <- fake_tamia_id |> 
+  add_epred_draws(nonlin_gamma_model_lnks, ndraws =12)
+
+fake_tamia_id_epred |> 
+  ggplot(aes(x = num_obs, y = .epred, colour = tamia_id)) + 
+  geom_line() + 
+  facet_wrap(~.draw) + 
+  guides(colour = "none")
+```
 
 
 ## treatment effects
