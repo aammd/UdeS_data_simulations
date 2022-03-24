@@ -344,5 +344,17 @@ fake_tamia_id_epred |>
 ```
 
 
+```{r}
+fake_tamia_id_predictions <- fake_tamia_id |> 
+  add_predicted_draws(nonlin_gamma_model_lnks, ndraws = 5)
+
+fake_tamia_id_predictions |> 
+  ggplot(aes(x = num_obs, y = .prediction, colour = tamia_id)) + 
+  geom_point() + 
+  facet_wrap(~.draw) + 
+  guides(colour = "none")
+```
+
+
 ## treatment effects
 
