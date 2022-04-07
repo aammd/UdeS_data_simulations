@@ -1,0 +1,43 @@
+---
+title: "Your Document Title"
+author: "Document Author"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+## 
+
+tr3ever, 
+
+earthworms on salamanders
+
+when earthworms are in a forest they eat the floor, and that is where the salamanders live
+
+40 sites, thickness of humic layer
+
+earthworms on salamder
+
+25 untreated boards in a grid,
+
+mark recapture of the salamander -- recapture is low
+
+the goal in mark recapture is to have a good percentage. 
+
+abundance, rather than mark recapture -- if you recapture a marked salamander 
+
+
+### five models
+
+* forest floor depth \ earthorms
+* salamanders ~ earthworms
+
+worms make salamanders
+* does salamander size change with and without earthworms
+* demographic structure of -- proportion of juveniles of all salamnders
+* diet! subset of 40 sites. earthworm biomass, gut contents of salamanders
+20 different sites. 
+
+biomass of earthworms 

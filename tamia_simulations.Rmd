@@ -291,8 +291,13 @@ fake_tamia_id_epred |>
 
 ## full complex model
 
-```{r}
+$$
 
+$$
+
+
+```{r}
+library(brms)
 nonlin_form_id_full <- bf(FID ~ inv_logit(logitM) * 1000 * (1 - inv_logit(logitp)*num_obs/(exp(logd) + num_obs)),
    logitM ~ 1 + (1 |t| tamia_id),
    logitp ~ 1 + (1 |t| tamia_id),
@@ -333,6 +338,7 @@ summary(nonlin_gamma_model_lnks)
 ```
 
 ```{r}
+library(tidybayes)
 fake_tamia_id_epred <- fake_tamia_id |> 
   add_epred_draws(nonlin_gamma_model_lnks, ndraws =12)
 
