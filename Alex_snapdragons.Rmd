@@ -1,0 +1,196 @@
+---
+title: "Snapdragon flower comparison"
+author: "Alex and Andrew"
+date: "17 may 2021"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+## snapdragons
+
+population outcrosses
+
+```{r}
+# five populations !
+five_pops <- c("B", "P", "L", "T", "V")
+
+# two magenta three yellow
+pop_types <- setNames(object = rep(c("magenta", "yellow"), times = c(2, 3)),
+                      nm = five_pops)
+
+```
+
+*B* and *T* were used for with and between population crosses, and the others were used for only between-pop crosses.
+
+
+```{r}
+crosses <- c("B_B", "B_P", "B_T", "T_L", "T_T", "V_L")
+
+library(tidyverse)
+
+detailed_design <- tibble(crosses) |> 
+  separate(crosses, into = c("mother", "father"), remove = FALSE) |> 
+  mutate(mom_type = pop_types[mother],
+         dad_type = pop_types[father],
+         het_zygo = if_else(mother == father, "in", "out"),
+         ishybrid = as.numeric(mom_type != dad_type),
+         het_num  = as.numeric(het_zygo == "out"),
+         is_all_yellow = if_else(mom_type == "yellow" & dad_type == "yellow", 1, 0))
+```
+
+Another way to think about his: 
+* same colour, same pop
+* same colour, diff pop
+* diff colour, diff pop
+
+weird wrinkle is that there are two reps for one type of cross only! let's simplify
+
+```{r}
+simple_design <- detailed_design |> 
+  select(hetzygo = het_num, ishybrid, is_all_yellow) |> 
+  distinct()
+```
+
+6 crosses , 270 plants
+
+
+```{r}
+270/30 # 45 plants per cross
+```
+
+make fake crosses
+```{r}
+cross_id <- paste0("cross", 1:30)
+
+fake_crosses <- replicate(6, simple_design, simplify = FALSE) |> 
+  bind_rows() |> 
+  mutate(cross_id) |> 
+  arrange(hetzygo, ishybrid, is_all_yellow)
+
+```
+
+now make 45 plants per cross
+
+```{r}
+fake_plants <- fake_crosses |> 
+  rowwise() |> 
+  mutate(plant_id = list(paste0("p", 1:9))) |> 
+  unnest(cols = plant_id) |> 
+  mutate(plant_id = paste0(cross_id,"-", plant_id))
+```
+
+Note: sample sizes are probably not equal among the crosses!
+
+## choose effects
+
+what does each effect do? no interactions (for now!)
+
+*height*
+
+```{r}
+magenta_own_pop <- 41
+diff_to_yellow <- -5
+hetzygo_advang <- 7
+```
+
+
+## example simulations
+
+```{r}
+colour <- factor(c("o", "y", "p"), levels = c("o", "y", "p"))
+
+contrasts(colour)
+
+```
+
+```{r}
+purple_mean <- 1
+diff_to_orange <- -1
+diff_to_yellow <- 0.5
+block_sd <- .5
+
+# make fake data
+library(tidyverse)
+fake_design <- tibble(n_plants = rep(10, times = 45),
+       colour = rep(c("y", "o", "p"), times = 15),
+       block_num = rep(1:15, each = 3),
+       is_yellow = as.numeric(colour == "y"),
+       is_orange = as.numeric(colour == "o"))
+
+# fixed effects
+
+fake_obs <- fake_design |> 
+  mutate(survival_avg = purple_mean + 
+           is_yellow*diff_to_yellow + 
+           is_orange*diff_to_orange,
+         colour = factor(colour, levels = c("p", "o", "y"))) |> 
+  mutate(y = rnorm(45, mean = survival_avg, sd = .1))
+
+lm(y ~ colour, data = fake_obs)
+
+library(ggplot2)
+
+fake_obs |> 
+  ggplot(aes(x = colour, y = y)) + geom_point()
+
+```
+
+make it binomial
+
+
+```{r}
+fake_survival <- fake_obs |> 
+  select(-y) |> 
+  mutate(surv_p = plogis(survival_avg),
+         surv = rbinom(45, n_plants, prob = surv_p))
+
+with(fake_survival,
+     glm(cbind(surv, n_plants - surv) ~ colour,
+         family = binomial()))
+
+```
+
+add in some blocks
+
+```{r}
+
+block_ecarts <- rnorm(15, mean = 0, sd = block_sd)
+
+fake_obs_block <- fake_obs |> 
+  select(-y) |> 
+  mutate(block_ecart = block_ecarts[block_num],
+         surv_avg_blk = survival_avg + block_ecart,
+         obs = rbinom(45, n_plants, prob = plogis(surv_avg_blk)))
+
+fake_obs_block |> 
+  ggplot(aes(x = colour, y = obs, group = block_num)) + 
+  geom_line()
+```
+
+
+```{r}
+library(glmmTMB)
+
+glmmTMB(cbind(obs, n_plants - obs) ~ colour + (1|block_num),
+        family = binomial(),
+        data = fake_obs_block)
+
+```
+
+## random slopes
+
+```{r}
+tibble(x = seq(from = -1, to = 1, length.out= 700)) |> 
+  rowwise() |> 
+  mutate(m = list(matrix(c(1, x, x, 1), nrow = 2)),
+         dlkj = rethinking::dlkjcorr(m, eta = 2)) |> 
+  ggplot(aes(x = x, y = dlkj)) + geom_line()
+
+curve(rethinking::dlkjcorr(matrix(c(1,x,x,1), nrow = 2), eta = 2), xlim = c(.1, .9))
+
+MASS::mvrnorm(1, mu = c(0, 0), Sigma = matrix(1, nrow = 2, ncol = 2))
+```
+
+
